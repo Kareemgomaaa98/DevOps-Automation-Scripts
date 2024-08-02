@@ -1,0 +1,26 @@
+---
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-agent
+  namespace: devops-tools
+  containers:
+  - name: ubuntu
+    image: blackrocktech/jenkins-agent:jenkins-agent
+    command:
+    - cat
+    tty: true
+    resources:
+      requests:
+      #   cpu: "500m" # Request half a CPU core
+      #   memory: "512Mi" # Request 512MB of memory
+      # limits:
+      #   cpu: "1" # Limit to 1 CPU core
+      #   memory: "1Gi" # Limit to 1GB of memory
+    volumeMounts:
+    - name: docker-socket
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock

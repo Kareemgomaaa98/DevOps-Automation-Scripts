@@ -1,0 +1,3 @@
+sudo docker build . -t jenkins-agent
+sudo docker tag jenkins-agent blackrocktech/jenkins-agent:jenkins-agent
+sudo docker push blackrocktech/jenkins-agent:jenkins-agent

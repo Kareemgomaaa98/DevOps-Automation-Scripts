@@ -1,0 +1,36 @@
+### VPS06 ###
+
+VPS_USERNAME06 = "ubuntu"
+VPS_IP06 = "5.199.13.44"
+VPS_PASSWORD06 = "pass"
+
+### VPS05 ###
+
+VPS_USERNAME05 = "ubuntu"
+VPS_IP05 = "5.199.13.44"
+VPS_PASSWORD05 = "pass"
+
+### VPS04 ###
+
+VPS_USERNAME04 = "ubuntu"
+VPS_IP04 = "5.199.13.44"
+VPS_PASSWORD04 = "pass"
+
+### VPS03 ###
+
+VPS_USERNAME03 = "ubuntu"
+VPS_IP03 = "5.199.13.44"
+VPS_PASSWORD03 = "pass"
+
+### VPS02 ###
+
+VPS_USERNAME02 = "ubuntu"
+VPS_IP02 = "5.199.13.44"
+VPS_PASSWORD02 = "pass"
+
+### VPS01 ###
+
+VPS_USERNAME01 = "ubuntu"
+VPS_IP01 = "5.199.13.44"
+VPS_PASSWORD01 = "pass"
+

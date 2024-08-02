@@ -1,0 +1,137 @@
+def slackPostBuild(status) {
+    def color = status == 'SUCCESS' ? '#00FF00' : (status == 'FAILURE' ? '#FF0000' : '#808080')
+    slackSend(
+        channel: SLACK_CHANNEL,
+        color: color,
+        message: "${status == 'SUCCESS' ? 'SUCCEEDED 🥳' : (status == 'FAILURE' ? 'FAILED 😢' : 'ABORTED 🤒')} :\n" +
+                 "Job name: ${JOB_NAME}\n" +
+                 "Triggered by Git Commit: ${GIT_COMMIT}\n" +
+                 "Branch: ${GIT_BRANCH}\n" +
+                 "Git url: ${GIT_URL}\n" +
+                 "Build url: ${BUILD_URL}\n" +
+                 "Build id: ${BUILD_ID}"
+    )
+}
+
+pipeline {
+    agent {
+        kubernetes {
+            yamlFile './agent-pod-template.yaml'
+        }
+    }
+
+    environment {
+        // Cloud Creds
+        VPS_IP            = '51.178.45.106'
+        ACCESS_KEY_ID     = credentials('s3-access-key')
+        SECRET_ACCESS_KEY = credentials('s3-secret-access-key')
+        DEFAULT_REGION    = 'sbg'  // the region where the bucket is
+        S3_BUCKET         = 'databases-backup/mongodb-vps05'  // replace with your S3 bucket name
+        S3_ENDPOINT       = 'https://s3.sbg.io.cloud.ovh.net/'
+
+        // Slack
+        SLACK_CHANNEL = 'backups_and_restore'
+
+        // MongoDB Creds
+        MONGODB_URI = credentials('mongodb-vps05')
+    }
+
+    parameters {
+        choice(name: 'ACTION', choices: ['Backup', 'Restore'])
+    }
+
+    stages {
+        stage('Connecting to S3') {
+            steps {
+                script {
+                    slackSend(channel: SLACK_CHANNEL, color: '#808080', message: "Connecting to S3...")
+                    container('ubuntu') {
+                        // Configure AWS credentials for aws CLI
+                        sh '''
+                        # Set AWS configuration
+                        aws configure set aws_access_key_id ${ACCESS_KEY_ID}
+                        aws configure set aws_secret_access_key ${SECRET_ACCESS_KEY}
+                        aws configure set region ${DEFAULT_REGION}
+
+                        # List S3 buckets to verify configuration
+                        aws s3 ls --endpoint-url "${S3_ENDPOINT}"
+                        '''
+                    }
+                    slackSend(channel: SLACK_CHANNEL, color: '#00FF00', message: "Connected to S3.")
+                }
+            }
+        }
+
+        stage('Backup or Restore') {
+            steps {
+                script {
+                    if (params.ACTION == 'Backup') {
+                        slackSend(channel: SLACK_CHANNEL, color: '#808080', message: "Starting backup process...")
+                        container('ubuntu') {
+                            withCredentials([usernamePassword(credentialsId: "VPS01", usernameVariable: 'VPS_USERNAME', passwordVariable: 'VPS_PASSWORD')]) {
+                                sh '''
+                                sshpass -p "${VPS_PASSWORD}" ssh -o StrictHostKeyChecking=no ${VPS_USERNAME}@${VPS_IP} << EOF
+                                mongodump --out=./backup_files --uri="${MONGODB_URI}" && tar -cvzf mongodb-backup-$(date +%F).tar.gz backup_files
+                                ls -lh
+                                
+                                aws configure set aws_access_key_id ${ACCESS_KEY_ID}
+                                aws configure set aws_secret_access_key ${SECRET_ACCESS_KEY}
+                                aws configure set region ${DEFAULT_REGION}
+
+                                # List S3 buckets to verify configuration
+                                aws s3 ls --endpoint-url "${S3_ENDPOINT}"
+
+                                # Upload the file to S3
+                                aws s3 cp mongodb-backup-$(date +%F).tar.gz s3://${S3_BUCKET}/ --endpoint-url "${S3_ENDPOINT}"
+
+                                # List the contents of the S3 bucket to verify the upload
+                                aws s3 ls s3://${S3_BUCKET}/ --endpoint-url "${S3_ENDPOINT}"
+
+                                # Clean up
+                                rm -r ./backup_files
+                                rm mongodb-backup-$(date +%F).tar.gz
+                                ls -a
+                                exit
+                                EOF
+                                '''
+                            }
+                        }
+                        slackSend(channel: SLACK_CHANNEL, color: '#00FF00', message: "Backup process completed.")
+                    } else if (params.ACTION == 'Restore') {
+                        slackSend(channel: SLACK_CHANNEL, color: '#808080', message: "Starting restore process...")
+                        container('ubuntu') {
+                            sh '''
+                            # Get the date for one day before
+                            YESTERDAY=$(date -d "yesterday" +%F)
+
+                            # Download the backup file from S3
+                            aws s3 cp s3://${S3_BUCKET}/mongodb-backup-$YESTERDAY.tar.gz . --endpoint-url "${S3_ENDPOINT}"
+
+                            # Extract the backup file
+                            tar -zxvf mongodb-backup-$YESTERDAY.tar.gz
+
+                            # Restore the database
+                            mongorestore --uri="${MONGODB_URI}" ./backup_files
+
+                            # Clean up
+                            rm -r ./backup_files
+                            rm mongodb-backup-$YESTERDAY.tar.gz
+
+                            ls -a
+                            '''
+                        }
+                        slackSend(channel: SLACK_CHANNEL, color: '#00FF00', message: "Restore process completed.")
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                slackPostBuild(currentBuild.currentResult)
+            }
+        }
+    }
+}
